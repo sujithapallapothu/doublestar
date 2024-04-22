@@ -50,7 +50,6 @@ type GlobWalkFunc func(path string, d fs.DirEntry) error
 //
 // Note: users should _not_ count on the returned error,
 // doublestar.ErrBadPattern, being equal to path.ErrBadPattern.
-//
 func GlobWalk(fsys fs.FS, pattern string, fn GlobWalkFunc, opts ...GlobOption) error {
 	if !ValidatePattern(pattern) {
 		return ErrBadPattern
@@ -76,7 +75,7 @@ func (g *glob) doGlobWalk(fsys fs.FS, pattern string, firstSegment, beforeMeta b
 		// The pattern may contain escaped wildcard characters for an exact path match.
 		path := unescapeMeta(pattern)
 		info, pathExists, err := g.exists(fsys, path, beforeMeta)
-		if pathExists && (!firstSegment || !g.filesOnly || !info.IsDir()) {
+		if pathExists && isValidAge(info.ModTime(), g.age) && (!firstSegment || !g.filesOnly || !info.IsDir()) {
 			err = fn(path, dirEntryFromFileInfo(info))
 			if err == SkipDir {
 				err = nil
@@ -249,7 +248,7 @@ func (g *glob) globDirWalk(fsys fs.FS, dir, pattern string, canMatchFiles, befor
 			if err != nil {
 				return err
 			}
-			if isDir {
+			if isDir && isValidAge(info.ModTime(), g.age) {
 				e = fn(dir, dirEntryFromFileInfo(info))
 				if e == SkipDir {
 					e = nil
@@ -266,6 +265,9 @@ func (g *glob) globDirWalk(fsys fs.FS, dir, pattern string, canMatchFiles, befor
 			return err
 		}
 		if !dirExists || !info.IsDir() {
+			return nil
+		}
+		if !isValidAge(info.ModTime(), g.age) {
 			return nil
 		}
 		if !canMatchFiles || !g.filesOnly {
@@ -294,6 +296,10 @@ func (g *glob) globDirWalk(fsys fs.FS, dir, pattern string, canMatchFiles, befor
 		if e != nil {
 			return
 		}
+		fi, err := info.Info()
+		if err != nil {
+			return err
+		}
 		if matched {
 			matched = canMatchFiles
 			if !matched || g.filesOnly {
@@ -307,7 +313,7 @@ func (g *glob) globDirWalk(fsys fs.FS, dir, pattern string, canMatchFiles, befor
 					matched = !matched
 				}
 			}
-			if matched {
+			if matched && isValidAge(fi.ModTime(), g.age) {
 				if e = fn(path.Join(dir, name), info); e != nil {
 					if e == SkipDir {
 						e = nil
@@ -340,8 +346,12 @@ func (g *glob) globDoubleStarWalk(fsys fs.FS, dir string, canMatchFiles bool, fn
 		if err != nil {
 			return err
 		}
+		fi, err := info.Info()
+		if err != nil {
+			return err
+		}
 
-		if isDir {
+		if isDir && isValidAge(fi.ModTime(), g.age) {
 			p := path.Join(dir, name)
 			if !canMatchFiles || !g.filesOnly {
 				// `**` can match *this* dir, so add it
@@ -356,7 +366,7 @@ func (g *glob) globDoubleStarWalk(fsys fs.FS, dir string, canMatchFiles bool, fn
 			if e = g.globDoubleStarWalk(fsys, p, canMatchFiles, fn); e != nil {
 				return
 			}
-		} else if canMatchFiles {
+		} else if canMatchFiles && isValidAge(fi.ModTime(), g.age) {
 			if e = fn(path.Join(dir, name), info); e != nil {
 				if e == SkipDir {
 					e = nil
