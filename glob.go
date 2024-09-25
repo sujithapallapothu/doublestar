@@ -29,6 +29,7 @@ import (
 //
 // Note: users should _not_ count on the returned error,
 // doublestar.ErrBadPattern, being equal to path.ErrBadPattern.
+//
 func Glob(fsys fs.FS, pattern string, opts ...GlobOption) ([]string, error) {
 	if !ValidatePattern(pattern) {
 		return nil, ErrBadPattern
@@ -72,7 +73,7 @@ func (g *glob) doGlob(fsys fs.FS, pattern string, m []string, firstSegment, befo
 			return nil, pathErr
 		}
 
-		if pathExists && isValidAge(pathInfo.ModTime(), g.age) && (!firstSegment || !g.filesOnly || !pathInfo.IsDir()) {
+		if pathExists && (!firstSegment || !g.filesOnly || !pathInfo.IsDir()) {
 			matches = append(matches, path)
 		}
 
@@ -197,11 +198,11 @@ func (g *glob) globDir(fsys fs.FS, dir, pattern string, matches []string, canMat
 			// pattern can be an empty string if the original pattern ended in a
 			// slash, in which case, we should just return dir, but only if it
 			// actually exists and it's a directory (or a symlink to a directory)
-			fi, isDir, err := g.isPathDir(fsys, dir, beforeMeta)
+			_, isDir, err := g.isPathDir(fsys, dir, beforeMeta)
 			if err != nil {
 				return nil, err
 			}
-			if isDir && isValidAge(fi.ModTime(), g.age) {
+			if isDir {
 				m = append(m, dir)
 			}
 		}
@@ -225,10 +226,6 @@ func (g *glob) globDir(fsys fs.FS, dir, pattern string, matches []string, canMat
 	var matched bool
 	for _, info := range dirs {
 		name := info.Name()
-		fi, err := info.Info()
-		if err != nil {
-			return m, err
-		}
 		matched, e = matchWithSeparator(pattern, name, '/', false)
 		if e != nil {
 			return
@@ -246,7 +243,7 @@ func (g *glob) globDir(fsys fs.FS, dir, pattern string, matches []string, canMat
 					matched = !matched
 				}
 			}
-			if matched && isValidAge(fi.ModTime(), g.age) {
+			if matched {
 				m = append(m, path.Join(dir, name))
 			}
 		}
@@ -276,16 +273,12 @@ func (g *glob) globDoubleStar(fsys fs.FS, dir string, matches []string, canMatch
 		if err != nil {
 			return nil, err
 		}
-		fi, err := info.Info()
-		if err != nil {
-			return nil, err
-		}
-		if isDir && isValidAge(fi.ModTime(), g.age) {
+		if isDir {
 			matches, err = g.globDoubleStar(fsys, path.Join(dir, name), matches, canMatchFiles, false)
 			if err != nil {
 				return nil, err
 			}
-		} else if canMatchFiles && isValidAge(fi.ModTime(), g.age) {
+		} else if canMatchFiles {
 			matches = append(matches, path.Join(dir, name))
 		}
 	}

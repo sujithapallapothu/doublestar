@@ -6,12 +6,9 @@ import (
 	"os"
 	"path"
 	"path/filepath"
-	"reflect"
 	"runtime"
-	"sort"
 	"strings"
 	"testing"
-	"time"
 )
 
 type MatchTest struct {
@@ -731,7 +728,7 @@ func buildNumResults() {
 
 func mkdirp(parts ...string) {
 	dirs := path.Join(parts...)
-	err := os.MkdirAll(dirs, 0o755)
+	err := os.MkdirAll(dirs, 0755)
 	if err != nil {
 		log.Fatalf("Could not create test directories %v: %v\n", dirs, err)
 	}
@@ -825,134 +822,4 @@ func TestMain(m *testing.M) {
 	buildNumResults()
 
 	os.Exit(m.Run())
-}
-
-func TestFilePathGlobWithMtime(t *testing.T) {
-	type fields struct {
-		pattern string
-		opts    []GlobOption
-	}
-	tests := []struct {
-		name          string
-		fields        fields
-		dirsToCreate  []string
-		dirTimes      []time.Time
-		filesToCreate []string
-		fileTimes     []time.Time
-		want          []string
-		wantErr       bool
-	}{
-		{
-			name: "no files within 1 hr",
-			fields: fields{
-				pattern: "remove/*",
-				opts: []GlobOption{
-					WithMaxAge(time.Hour),
-				},
-			},
-			dirsToCreate:  []string{"remove"},
-			dirTimes:      []time.Time{time.Now()},
-			filesToCreate: []string{"remove/a.txt", "remove/b.txt", "remove/c.txt"},
-			fileTimes:     []time.Time{time.Now().Add(-time.Hour * 2), time.Now().Add(-time.Hour * 2), time.Now().Add(-time.Hour * 2)},
-			want:          nil,
-			wantErr:       false,
-		},
-		{
-			name: "one files within 1 hr",
-			fields: fields{
-				pattern: "remove/*",
-				opts: []GlobOption{
-					WithMaxAge(time.Hour),
-				},
-			},
-			dirsToCreate:  []string{"remove"},
-			dirTimes:      []time.Time{time.Now()},
-			filesToCreate: []string{"remove/a.txt", "remove/b.txt", "remove/c.txt"},
-			fileTimes:     []time.Time{time.Now().Add(-time.Minute * 10), time.Now().Add(-time.Hour * 2), time.Now().Add(-time.Hour * 2)},
-			want:          []string{"remove/a.txt"},
-			wantErr:       false,
-		},
-		{
-			name: "all files within 1 hr",
-			fields: fields{
-				pattern: "remove/*",
-				opts: []GlobOption{
-					WithMaxAge(time.Hour),
-				},
-			},
-			dirsToCreate:  []string{"remove"},
-			dirTimes:      []time.Time{time.Now()},
-			filesToCreate: []string{"remove/a.txt", "remove/b.txt", "remove/c.txt"},
-			fileTimes:     []time.Time{time.Now().Add(-time.Minute * 10), time.Now().Add(-time.Microsecond * 2), time.Now().Add(-time.Second * 2)},
-			want:          []string{"remove/b.txt", "remove/c.txt", "remove/a.txt"},
-			wantErr:       false,
-		},
-		{
-			name: "multiple dirs with only all files in one dir within 1 hr",
-			fields: fields{
-				pattern: "rem*/*",
-				opts: []GlobOption{
-					WithMaxAge(time.Hour),
-				},
-			},
-			dirsToCreate:  []string{"remove", "rem_1", "rem_2"},
-			dirTimes:      []time.Time{time.Now(), time.Now().Add(-time.Hour * 2), time.Now().Add(-time.Hour * 2)},
-			filesToCreate: []string{"remove/a.txt", "remove/b.txt", "remove/c.txt", "rem_1/a.txt", "rem_2/b.txt"},
-			fileTimes:     []time.Time{time.Now().Add(-time.Minute * 10), time.Now().Add(-time.Microsecond * 2), time.Now().Add(-time.Second * 2), time.Now().Add(-time.Hour * 2), time.Now().Add(-time.Hour * 2)},
-			want:          []string{"remove/b.txt", "remove/c.txt", "remove/a.txt"},
-			wantErr:       false,
-		},
-		{
-			name: "multiple dirs with only one file in one dir within 1 hr",
-			fields: fields{
-				pattern: "rem*/*",
-				opts: []GlobOption{
-					WithMaxAge(time.Hour),
-				},
-			},
-			dirsToCreate:  []string{"remove", "rem_1", "rem_2"},
-			dirTimes:      []time.Time{time.Now(), time.Now().Add(-time.Hour * 2), time.Now().Add(-time.Hour * 2)},
-			filesToCreate: []string{"remove/a.txt", "remove/b.txt", "remove/c.txt", "rem_1/a.txt", "rem_2/b.txt"},
-			fileTimes:     []time.Time{time.Now().Add(-time.Hour * 10), time.Now().Add(-time.Microsecond * 2), time.Now().Add(-time.Hour * 2), time.Now().Add(-time.Hour * 2), time.Now().Add(-time.Hour * 2)},
-			want:          []string{"remove/b.txt"},
-			wantErr:       false,
-		},
-	}
-
-	for _, tt := range tests {
-
-		for index, d := range tt.dirsToCreate {
-			_ = os.MkdirAll(d, 0o755)
-			os.Chtimes(d, tt.dirTimes[index], tt.dirTimes[index])
-		}
-
-		defer func() {
-			for _, d := range tt.dirsToCreate {
-				_ = os.RemoveAll(d)
-			}
-		}()
-
-		// creating files
-		for index, f := range tt.filesToCreate {
-			touch(f)
-			os.Chtimes(f, tt.fileTimes[index], tt.fileTimes[index])
-		}
-
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := FilepathGlob(tt.fields.pattern, tt.fields.opts...)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("error = %v, wantErr %v", err, tt.wantErr)
-			}
-			sort.Slice(got, func(i, j int) bool {
-				return got[i] < got[j]
-			})
-			sort.Slice(tt.want, func(i, j int) bool {
-				return tt.want[i] < tt.want[j]
-			})
-			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("\n	want = %v\n	got = %v", tt.want, got)
-			}
-		})
-
-	}
 }
