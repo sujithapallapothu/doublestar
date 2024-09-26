@@ -165,7 +165,7 @@ func TestFilepathGlobWithGlobOptions(t *testing.T) {
 		{
 			name: "new data in old & new folders",
 			args: args{
-				pattern: baseDir + "/*/*/*.log",
+				pattern: baseDir + "/**/*/*.log",
 				opts: []GlobOption{
 					WithFilesOnly(), WithFailOnIOErrors(), WithMaxAge(time.Hour * 12),
 				},
