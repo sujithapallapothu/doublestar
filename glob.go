@@ -29,7 +29,6 @@ import (
 //
 // Note: users should _not_ count on the returned error,
 // doublestar.ErrBadPattern, being equal to path.ErrBadPattern.
-//
 func Glob(fsys fs.FS, pattern string, opts ...GlobOption) ([]string, error) {
 	if !ValidatePattern(pattern) {
 		return nil, ErrBadPattern
@@ -44,6 +43,17 @@ func Glob(fsys fs.FS, pattern string, opts ...GlobOption) ([]string, error) {
 		// _very_ slight advantage because of lower function call overhead.
 		var matches []string
 		err := g.doGlobWalk(fsys, pattern, true, true, func(p string, d fs.DirEntry) error {
+			if !d.IsDir() {
+				if fi, err := d.Info(); err == nil {
+					if !isOlder(fi.ModTime(), g.maxAge) {
+						matches = append(matches, p)
+					}
+				} else {
+					matches = append(matches, p)
+				}
+				return nil
+			}
+
 			matches = append(matches, p)
 			return nil
 		})
@@ -74,7 +84,9 @@ func (g *glob) doGlob(fsys fs.FS, pattern string, m []string, firstSegment, befo
 		}
 
 		if pathExists && (!firstSegment || !g.filesOnly || !pathInfo.IsDir()) {
-			matches = append(matches, path)
+			if !isOlder(pathInfo.ModTime(), g.maxAge) {
+				matches = append(matches, path)
+			}
 		}
 
 		return
@@ -240,7 +252,13 @@ func (g *glob) globDir(fsys fs.FS, dir, pattern string, matches []string, canMat
 				if canMatchFiles {
 					// if we're here, it's because g.filesOnly
 					// is set and we don't want directories
-					matched = !matched
+					if fi, err := info.Info(); err == nil {
+						if !isOlder(fi.ModTime(), g.maxAge) {
+							matched = !matched
+						}
+					} else {
+						matched = !matched
+					}
 				}
 			}
 			if matched {
