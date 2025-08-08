@@ -96,7 +96,7 @@ func FilepathGlob(pattern string, opts ...GlobOption) (matches []string, err err
 			pattern = unescapeMeta(pattern)
 		}
 
-		if _, err = os.Lstat(pattern); err != nil {
+		if _, err = os.Stat(pattern); err != nil {
 			g := newGlob(opts...)
 			if errors.Is(err, os.ErrNotExist) {
 				return nil, g.handlePatternNotExist(true)
