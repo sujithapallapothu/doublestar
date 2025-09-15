@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io/fs"
 	"path"
+	"time"
 )
 
 // Glob returns the names of all files matching pattern or nil if there is no
@@ -44,8 +45,8 @@ func Glob(fsys fs.FS, pattern string, opts ...GlobOption) ([]string, error) {
 		var matches []string
 		err := g.doGlobWalk(fsys, pattern, true, true, func(p string, d fs.DirEntry) error {
 			if !d.IsDir() {
-				if fi, err := d.Info(); err == nil {
-					if !isOlder(fi.ModTime(), g.maxAge) {
+				if fileModTime, err := g.getFileModTime(fsys, path.Dir(p), d.Name(), d); err == nil {
+					if !isOlder(fileModTime, g.maxAge) {
 						matches = append(matches, p)
 					}
 				} else {
@@ -252,8 +253,8 @@ func (g *glob) globDir(fsys fs.FS, dir, pattern string, matches []string, canMat
 				if canMatchFiles {
 					// if we're here, it's because g.filesOnly
 					// is set and we don't want directories
-					if fi, err := info.Info(); err == nil {
-						if !isOlder(fi.ModTime(), g.maxAge) {
+					if fileModTime, err := g.getFileModTime(fsys, dir, name, info); err == nil {
+						if !isOlder(fileModTime, g.maxAge) {
 							matched = !matched
 						}
 					} else {
@@ -424,6 +425,29 @@ func (g *glob) isDir(fsys fs.FS, dir, name string, info fs.DirEntry) (bool, erro
 		return finfo.IsDir(), nil
 	}
 	return info.IsDir(), nil
+}
+
+func (g *glob) getFileModTime(fsys fs.FS, dir, name string, info fs.DirEntry) (modTime time.Time, err error) {
+	if !g.noFollow && (info.Type()&fs.ModeSymlink) > 0 {
+		p := name
+		if dir != "" {
+			p = path.Join(dir, name)
+		}
+		finfo, err := fs.Stat(fsys, p)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				return time.Time{}, nil
+			}
+			return time.Time{}, g.forwardErrIfFailOnIOErrors(err)
+		}
+		return finfo.ModTime(), nil
+	}
+	// For non-symlinks, get info from DirEntry
+	fi, err := info.Info()
+	if err != nil {
+		return time.Time{}, g.forwardErrIfFailOnIOErrors(err)
+	}
+	return fi.ModTime(), nil
 }
 
 // Builds a string from an alt
